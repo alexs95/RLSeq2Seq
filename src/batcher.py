@@ -53,7 +53,7 @@ class Example(object):
     if len(article_words) > hps.max_enc_steps:
       article_words = article_words[:hps.max_enc_steps]
     self.enc_len = len(article_words) # store the length after truncation but before padding
-    self.enc_input = [vocab.word2id(w) for w in article_words] # list of word ids; OOVs are represented by the id for UNK token
+    self.enc_input = [vocab.word2id(w.decode("utf-8")) for w in article_words] # list of word ids; OOVs are represented by the id for UNK token
 
     # Process the abstract
     abstract = ' '.join(abstract_sentences) # string
@@ -134,11 +134,11 @@ class Batch(object):
        vocab: Vocabulary object
     """
     self.pad_id = vocab.word2id(data.PAD_TOKEN) # id of the PAD token used to pad sequences
-    self.init_encoder_seq(example_list, hps) # initialize the input to the encoder
+    self.init_encoder_seq(example_list, hps, vocab) # initialize the input to the encoder
     self.init_decoder_seq(example_list, hps) # initialize the input and targets for the decoder
     self.store_orig_strings(example_list) # store the original strings
 
-  def init_encoder_seq(self, example_list, hps):
+  def init_encoder_seq(self, example_list, hps, vocab):
     """Initializes the following:
         self.enc_batch:
           numpy array of shape (batch_size, <=max_enc_steps) containing integer ids (all OOVs represented by UNK id), padded to length of longest sequence in the batch
@@ -297,7 +297,7 @@ class Batcher(object):
 
     while True:
       try:
-        (article, abstract) = input_gen.next() # read the next example from file. article and abstract are both strings.
+        (article, abstract) = next(input_gen) # read the next example from file. article and abstract are both strings.
       except StopIteration: # if there are no more examples:
         tf.logging.info("The example generator for this example queue filling thread has exhausted data.")
         if self._single_pass:
@@ -364,7 +364,7 @@ class Batcher(object):
       example_generator: a generator of tf.Examples from file. See data.example_generator"""
     cnt = 0
     while True:
-      e = example_generator.next() # e is a tf.Example
+      e = next(example_generator) # e is a tf.Example
       try:
         article_text = e.features.feature['article'].bytes_list.value[0] # the article text was saved under the key 'article' in the data files
         abstract_text = e.features.feature['abstract'].bytes_list.value[0] # the abstract text was saved under the key 'abstract' in the data files

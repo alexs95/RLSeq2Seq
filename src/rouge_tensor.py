@@ -23,9 +23,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
+import re
 
+import nltk
 import numpy as np
-
+import data
 import tensorflow as tf
 
 
@@ -96,7 +98,7 @@ def _f_lcs(llcs, m, n):
   return f_lcs
 
 
-def rouge_l_sentence_level(eval_sentences, ref_sentences):
+def rouge_l_sentence_level(vocab):
   """Computes ROUGE-L (sentence level) of two collections of sentences.
 
   Source: https://www.microsoft.com/en-us/research/publication/
@@ -121,13 +123,81 @@ def rouge_l_sentence_level(eval_sentences, ref_sentences):
     A float: F_lcs
   """
 
-  f1_scores = []
-  for eval_sentence, ref_sentence in zip(eval_sentences, ref_sentences):
-    m = len(ref_sentence)
-    n = len(eval_sentence)
-    lcs = _len_lcs(eval_sentence, ref_sentence)
-    f1_scores.append(_f_lcs(lcs, m, n))
-  return np.array(f1_scores).astype(np.float32)
+  def untokenize(sentence):
+    """
+    Untokenizing a text undoes the tokenizing operation, restoring
+    punctuation and spaces to the places that people expect them to be.
+    Ideally, `untokenize(tokenize(text))` should be identical to `text`,
+    except for line breaks.
+    """
+    step1 = sentence.replace("`` ", '"').replace(" ''", '"').replace('. . .', '...')
+    step2 = step1.replace(" ( ", " (").replace(" ) ", ") ")
+    step3 = re.sub(r' ([.,:;?!%]+)([ \'"`])', r"\1\2", step2)
+    step4 = re.sub(r' ([.,:;?!%]+)$', r"\1", step3)
+    step5 = step4.replace(" '", "'").replace(" n't", "n't").replace(
+      "can not", "cannot")
+    step6 = step5.replace(" ` ", " '")
+    return step6.strip()
+
+  def func(eval_sentences, ref_sentences, story_sentences, stories, abstracts, art_oovs):
+    # tf.logging.info('eval: ' + str(len(eval_sentences)))
+    # sents = []
+    # for inx, sent in enumerate(eval_sentences):
+    #   sent = data.outputids2words([int(word) for word in sent], vocab, art_oovs[inx].decode('utf-8').split(" "))
+    #   sent = " ".join(sent)
+    #   sents.append(sent.replace('[unk] ', ''))
+    # tf.logging.info('eval: ' + str(sents))
+
+    # tf.logging.info('ref: ' + str(len(ref_sentences)))
+    # sents = []
+    # for inx, sent in enumerate(ref_sentences):
+    #   sent = data.outputids2words([int(word) for word in sent], vocab, art_oovs[inx].decode('utf-8').split(" "))
+    #   sent = " ".join(sent)
+    #   sents.append(sent.replace('[unk] ', ''))
+    # tf.logging.info('reference: ' + str(sents))
+
+    # tf.logging.info('abstracts: ' + str(len(abstracts)))
+    # tf.logging.info('abstracts type: ' + str(type(abstracts)))
+    # tf.logging.info('abstracts elem type: ' + str(type(abstracts[0])))
+    # tf.logging.info('story_sentences: ' + str(len(story_sentences)))
+    # tf.logging.info('story_sentences type: ' + str(type(story_sentences)))
+    # tf.logging.info('story_sentences elem type: ' + str(type(story_sentences[0])))
+    # tf.logging.info('story_sentences len(elem) elem type: ' + str(type(story_sentences[0][0])))
+    # tf.logging.info('eval: ' + str(len(eval_sentences)))
+    # tf.logging.info('eval type: ' + str(type(eval_sentences)))
+    # tf.logging.info('eval elem type: ' + str(type(eval_sentences[0])))
+    # tf.logging.info('eval elem elem type: ' + str(type(eval_sentences[0][0])))
+    # tf.logging.info('stories: ' + str(len(stories)))
+    # tf.logging.info('stories type: ' + str(type(stories)))
+    # tf.logging.info('stories elem type: ' + str(type(stories[0])))
+    # # tf.logging.info(abstracts)
+
+    # Fix unk, fix -lrb-, -rrb-
+    # unk needs to be removed from end of references, check if it ever appears not at thend?
+    sents = []
+    for inx, sent in enumerate(stories):
+      sent = sent.decode("utf-8")
+      sents.append(sent)
+    tf.logging.info('story: ' + str(nltk.sent_tokenize(sents[0])))
+
+    sents = []
+    for inx, sent in enumerate(eval_sentences):
+      sent = data.outputids2words([int(word) for word in sent], vocab, art_oovs[inx].decode('utf-8').split(" "))
+      sent = " ".join(sent)
+      sents.append(untokenize(sent))
+    tf.logging.info('eval_sentences: ' + str(nltk.sent_tokenize(sents[0])))
+
+    raise Exception
+
+    f1_scores = []
+    for eval_sentence, ref_sentence in zip(eval_sentences, ref_sentences):
+      m = len(ref_sentence)
+      n = len(eval_sentence)
+      lcs = _len_lcs(eval_sentence, ref_sentence)
+      f1_scores.append(_f_lcs(lcs, m, n))
+    return np.array(f1_scores).astype(np.float32)
+
+  return func
 
 
 def rouge_l_fscore(hypothesis, references, **unused_kwargs):
@@ -143,7 +213,8 @@ def rouge_l_fscore(hypothesis, references, **unused_kwargs):
   Returns:
     rouge_l_fscore: approx rouge-l f1 score.
   """
-  rouge_l_f_score = tf.py_func(rouge_l_sentence_level, (hypothesis, references), [tf.float32])
+  rouge_l_f_score = tf.py_func(rouge_l_sentence_level(unused_kwargs['vocab']), (hypothesis, references, unused_kwargs['enc_batch'], unused_kwargs['stories'], unused_kwargs['abstracts'], unused_kwargs['art_oovs']), [tf.float32])
+
   return rouge_l_f_score
 
 

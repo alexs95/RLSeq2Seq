@@ -75,27 +75,33 @@ def _calc_final_dist(_hps, v_size, _max_art_oovs, _enc_batch_extend_vocab, p_gen
 
 # Note: this function is based on tf.contrib.legacy_seq2seq_attention_decoder, which is now outdated.
 # In the future, it would make more sense to write variants on the attention mechanism using the new seq2seq library for tensorflow 1.0: https://www.tensorflow.org/api_guides/python/contrib.seq2seq#Attention
-def attention_decoder(_hps, 
-  v_size, 
-  _max_art_oovs, 
-  _enc_batch_extend_vocab, 
-  emb_dec_inputs,
-  target_batch,
-  _dec_in_state, 
-  _enc_states, 
-  enc_padding_mask, 
-  dec_padding_mask, 
-  cell, 
-  embedding, 
-  sampling_probability,
-  alpha,
-  unk_id,
-  initial_state_attention=False,
-  pointer_gen=True, 
-  use_coverage=False, 
-  prev_coverage=None, 
-  prev_decoder_outputs=[], 
-  prev_encoder_es = []):
+def attention_decoder(_hps,
+                      v_size,
+                      _max_art_oovs,
+                      _enc_batch_extend_vocab,
+                      emb_dec_inputs,
+                      target_batch,
+                      _dec_in_state,
+                      _enc_states,
+                      enc_padding_mask,
+                      dec_padding_mask,
+                      cell,
+                      embedding,
+                      sampling_probability,
+                      alpha,
+                      unk_id,
+                      initial_state_attention=False,
+                      pointer_gen=True,
+                      use_coverage=False,
+                      prev_coverage=None,
+                      prev_decoder_outputs=[],
+                      prev_encoder_es = [],
+                      stories = [],
+                      art_oovs = [],
+                      enc_batch = [],
+                      abstracts = [],
+                      vocab = None,
+                      ):
   """
   Args:
     _hps: parameter of the models.
@@ -120,6 +126,7 @@ def attention_decoder(_hps,
       If not None, a tensor with shape (batch_size, max_enc_steps). The previous step's coverage vector. This is only not None in decode mode when using coverage.
     prev_decoder_outputs: if not empty, a tensor of (len(prev_decoder_steps), batch_size, hidden_dim). The previous decoder output used for calculating the intradecoder attention during decode mode
     prev_encoder_es: if not empty, a tensor of (len(prev_encoder_es), batch_size, hidden_dim). The previous attention vector used for calculating the temporal attention during decode mode.
+    stories
   Returns:
     outputs: A list of the same length as emb_dec_inputs of 2D Tensors of
       shape [batch_size x cell.output_size]. The output vectors.
@@ -415,10 +422,11 @@ def attention_decoder(_hps,
         _sampling_rewards = []
         _greedy_rewards = []
         for _ in range(_hps.k):
-          rl_fscore = tf.reshape(rouge_l_fscore(tf.transpose(tf.stack(samples)[:, :, _]), target_batch),
+          # Calculate factual correctness score based on stories
+          rl_fscore = tf.reshape(rouge_l_fscore(tf.transpose(tf.stack(samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts),
                                  [-1, 1])  # shape (batch_size, 1)
           _sampling_rewards.append(tf.reshape(rl_fscore, [-1, 1]))
-          rl_fscore = tf.reshape(rouge_l_fscore(tf.transpose(tf.stack(greedy_search_samples)[:, :, _]), target_batch),
+          rl_fscore = tf.reshape(rouge_l_fscore(tf.transpose(tf.stack(greedy_search_samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts),
                                  [-1, 1])  # shape (batch_size, 1)
           _greedy_rewards.append(tf.reshape(rl_fscore, [-1, 1]))
         sampling_rewards.append(tf.squeeze(tf.stack(_sampling_rewards, axis=1), axis = -1)) # (batch_size, k)
@@ -431,9 +439,9 @@ def attention_decoder(_hps,
       _sampling_rewards = []
       _greedy_rewards = []
       for _ in range(_hps.k):
-        rl_fscore = rouge_l_fscore(tf.transpose(tf.stack(samples)[:, :, _]), target_batch) # shape (batch_size, 1)
+        rl_fscore = rouge_l_fscore(tf.transpose(tf.stack(samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts) # shape (batch_size, 1)
         _sampling_rewards.append(tf.reshape(rl_fscore, [-1, 1]))
-        rl_fscore = rouge_l_fscore(tf.transpose(tf.stack(greedy_search_samples)[:, :, _]), target_batch)  # shape (batch_size, 1)
+        rl_fscore = rouge_l_fscore(tf.transpose(tf.stack(greedy_search_samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts)  # shape (batch_size, 1)
         _greedy_rewards.append(tf.reshape(rl_fscore, [-1, 1]))
       sampling_rewards = tf.squeeze(tf.stack(_sampling_rewards, axis=1), axis=-1) # (batch_size, k)
       greedy_rewards = tf.squeeze(tf.stack(_greedy_rewards, axis=1), axis=-1) # (batch_size, k)

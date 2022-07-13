@@ -24,7 +24,6 @@ from attention_decoder import attention_decoder
 from tensorflow.contrib.tensorboard.plugins import projector
 from nltk.translate.bleu_score import sentence_bleu
 from rouge import rouge
-from rouge_tensor import rouge_l_fscore
 import data
 from replay_buffer import Transition
 
@@ -33,7 +32,8 @@ FLAGS = tf.app.flags.FLAGS
 class SummarizationModel(object):
   """A class to represent a sequence-to-sequence model for text summarization. Supports both baseline mode, pointer-generator mode, and coverage"""
 
-  def __init__(self, hps, vocab):
+  def __init__(self, hps, vocab, device=None):
+    self.device = device
     self._hps = hps
     self._vocab = vocab
 
@@ -47,6 +47,8 @@ class SummarizationModel(object):
     Returns:
       A single value representing the evaluation value for reference and summary
     """
+    tf.logging.info(reference)  # log to screen
+    tf.logging.info(summary)  # log to screen
     if 'rouge' in measure:
       return rouge([summary],[reference])[measure]
     else:
@@ -70,6 +72,8 @@ class SummarizationModel(object):
 
     # encoder part
     self._enc_batch = tf.placeholder(tf.int32, [hps.batch_size, None], name='enc_batch')
+    self._stories = tf.placeholder(tf.string, [hps.batch_size], name='story')
+    self._abstracts = tf.placeholder(tf.string, [hps.batch_size], name='absracts')
     self._enc_lens = tf.placeholder(tf.int32, [hps.batch_size], name='enc_lens')
     self._enc_padding_mask = tf.placeholder(tf.float32, [hps.batch_size, None], name='enc_padding_mask')
     self._eta = tf.placeholder(tf.float32, None, name='eta')
@@ -78,6 +82,7 @@ class SummarizationModel(object):
     if FLAGS.pointer_gen:
       self._enc_batch_extend_vocab = tf.placeholder(tf.int32, [hps.batch_size, None], name='enc_batch_extend_vocab')
       self._max_art_oovs = tf.placeholder(tf.int32, [], name='max_art_oovs')
+      self._art_oovs = tf.placeholder(tf.string, [hps.batch_size], name='art_oovs')
     if FLAGS.ac_training: # added by yaserkl@vt.edu for the purpose of calculating rouge loss
       self._q_estimates = tf.placeholder(tf.float32, [self._hps.batch_size,self._hps.k,self._hps.max_dec_steps, None], name='q_estimates')
     if FLAGS.scheduled_sampling:
@@ -106,22 +111,25 @@ class SummarizationModel(object):
     """
     feed_dict = {}
     feed_dict[self._enc_batch] = batch.enc_batch
+    feed_dict[self._stories] = batch.original_articles
+    feed_dict[self._abstracts] = batch.original_abstracts
     feed_dict[self._enc_lens] = batch.enc_lens
     feed_dict[self._enc_padding_mask] = batch.enc_padding_mask
     if FLAGS.pointer_gen:
       feed_dict[self._enc_batch_extend_vocab] = batch.enc_batch_extend_vocab
       feed_dict[self._max_art_oovs] = batch.max_art_oovs
+      feed_dict[self._art_oovs] = [' '.join(a) for a in batch.art_oovs]
     if not just_enc:
       feed_dict[self._dec_batch] = batch.dec_batch
       feed_dict[self._target_batch] = batch.target_batch
       feed_dict[self._dec_padding_mask] = batch.dec_padding_mask
     return feed_dict
 
-  def _add_encoder(self, emb_enc_inputs, seq_len):
+  def _add_encoder(self, encoder_inputs, seq_len):
     """Add a single-layer bidirectional LSTM encoder to the graph.
 
     Args:
-      emb_enc_inputs: A tensor of shape [batch_size, <=max_enc_steps, emb_size].
+      encoder_inputs: A tensor of shape [batch_size, <=max_enc_steps, emb_size].
       seq_len: Lengths of emb_enc_inputs (before padding). A tensor of shape [batch_size].
 
     Returns:
@@ -133,7 +141,7 @@ class SummarizationModel(object):
     with tf.variable_scope('encoder'):
       cell_fw = tf.contrib.rnn.LSTMCell(self._hps.enc_hidden_dim, initializer=self.rand_unif_init, state_is_tuple=True)
       cell_bw = tf.contrib.rnn.LSTMCell(self._hps.enc_hidden_dim, initializer=self.rand_unif_init, state_is_tuple=True)
-      (encoder_outputs, (fw_st, bw_st)) = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, emb_enc_inputs, dtype=tf.float32, sequence_length=seq_len, swap_memory=True)
+      (encoder_outputs, (fw_st, bw_st)) = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, encoder_inputs, dtype=tf.float32, sequence_length=seq_len, swap_memory=True)
       encoder_outputs = tf.concat(axis=2, values=encoder_outputs) # concatenate the forwards and backwards states
     return encoder_outputs, fw_st, bw_st
 
@@ -147,16 +155,15 @@ class SummarizationModel(object):
     Returns:
       state: LSTMStateTuple with hidden_dim units.
     """
-    enc_hidden_dim = self._hps.enc_hidden_dim
-    dec_hidden_dim = self._hps.dec_hidden_dim
+    hidden_dim = self._hps.enc_hidden_dim
 
     with tf.variable_scope('reduce_final_st'):
 
       # Define weights and biases to reduce the cell and reduce the state
-      w_reduce_c = tf.get_variable('w_reduce_c', [enc_hidden_dim * 2, dec_hidden_dim], dtype=tf.float32, initializer=self.trunc_norm_init)
-      w_reduce_h = tf.get_variable('w_reduce_h', [enc_hidden_dim * 2, dec_hidden_dim], dtype=tf.float32, initializer=self.trunc_norm_init)
-      bias_reduce_c = tf.get_variable('bias_reduce_c', [dec_hidden_dim], dtype=tf.float32, initializer=self.trunc_norm_init)
-      bias_reduce_h = tf.get_variable('bias_reduce_h', [dec_hidden_dim], dtype=tf.float32, initializer=self.trunc_norm_init)
+      w_reduce_c = tf.get_variable('w_reduce_c', [hidden_dim * 2, hidden_dim], dtype=tf.float32, initializer=self.trunc_norm_init)
+      w_reduce_h = tf.get_variable('w_reduce_h', [hidden_dim * 2, hidden_dim], dtype=tf.float32, initializer=self.trunc_norm_init)
+      bias_reduce_c = tf.get_variable('bias_reduce_c', [hidden_dim], dtype=tf.float32, initializer=self.trunc_norm_init)
+      bias_reduce_h = tf.get_variable('bias_reduce_h', [hidden_dim], dtype=tf.float32, initializer=self.trunc_norm_init)
 
       # Apply linear layer
       old_c = tf.concat(axis=1, values=[fw_st.c, bw_st.c]) # Concatenation of fw and bw cell
@@ -185,26 +192,31 @@ class SummarizationModel(object):
     prev_decoder_outputs = self.prev_decoder_outputs if (hps.intradecoder and hps.mode=="decode") else tf.stack([],axis=0)
     prev_encoder_es = self.prev_encoder_es if (hps.use_temporal_attention and hps.mode=="decode") else tf.stack([],axis=0)
     return attention_decoder(hps,
-      self._vocab.size(),
-      self._max_art_oovs,
-      self._enc_batch_extend_vocab,
-      emb_dec_inputs,
-      self._target_batch,
-      self._dec_in_state,
-      self._enc_states,
-      self._enc_padding_mask,
-      self._dec_padding_mask,
-      cell,
-      embedding,
-      self._sampling_probability if FLAGS.scheduled_sampling else 0,
-      self._alpha if FLAGS.E2EBackProp else 0,
-      self._vocab.word2id(data.UNKNOWN_TOKEN),
-      initial_state_attention=(hps.mode=="decode"),
-      pointer_gen=hps.pointer_gen,
-      use_coverage=hps.coverage,
-      prev_coverage=prev_coverage,
-      prev_decoder_outputs=prev_decoder_outputs,
-      prev_encoder_es = prev_encoder_es)
+                             self._vocab.size(),
+                             self._max_art_oovs,
+                             self._enc_batch_extend_vocab,
+                             emb_dec_inputs,
+                             self._target_batch,
+                             self._dec_in_state,
+                             self._enc_states,
+                             self._enc_padding_mask,
+                             self._dec_padding_mask,
+                             cell,
+                             embedding,
+                             self._sampling_probability if FLAGS.scheduled_sampling else 0,
+                             self._alpha if FLAGS.E2EBackProp else 0,
+                             self._vocab.word2id(data.UNKNOWN_TOKEN),
+                             initial_state_attention=(hps.mode=="decode"),
+                             pointer_gen=hps.pointer_gen,
+                             use_coverage=hps.coverage,
+                             prev_coverage=prev_coverage,
+                             prev_decoder_outputs=prev_decoder_outputs,
+                             prev_encoder_es = prev_encoder_es,
+                             stories=self._stories,
+                             abstracts=self._abstracts,
+                             art_oovs=self._art_oovs,
+                             enc_batch=self._enc_batch,
+                             vocab=self._vocab)
 
   def _add_emb_vis(self, embedding_var):
     """Do setup so that we can view word embedding visualization in Tensorboard, as described here:
@@ -418,10 +430,6 @@ class SummarizationModel(object):
         with tf.variable_scope('coverage_loss'):
           self._coverage_loss = _coverage_loss(self.attn_dists, self._dec_padding_mask)
           self.variable_summaries('coverage_loss', self._coverage_loss)
-        if self._hps.rl_training or self._hps.ac_training:
-          with tf.variable_scope('reinforce_loss'):
-            self._reinforce_cov_total_loss = self._reinforce_shared_loss + self._hps.cov_loss_wt * self._coverage_loss
-            self.variable_summaries('reinforce_coverage_loss', self._reinforce_cov_total_loss)
         if self._hps.pointer_gen:
           self._pointer_cov_total_loss = self._pgen_loss + self._hps.cov_loss_wt * self._coverage_loss
           self.variable_summaries('pointer_coverage_loss', self._pointer_cov_total_loss)

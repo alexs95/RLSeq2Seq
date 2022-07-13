@@ -180,7 +180,7 @@ class ReplayBuffer(object):
     """Reads data from file and processes into Examples which are then placed into the example queue."""
     while True:
       try:
-        input_gen = self._example_generator().next()
+        input_gen = next(self._example_generator())
       except StopIteration: # if there are no more examples:
         tf.logging.info("The example generator for this example queue filling thread has exhausted data.")
         raise Exception("single_pass mode is off but the example generator is out of data; error.")
