@@ -32,10 +32,11 @@ FLAGS = tf.app.flags.FLAGS
 class SummarizationModel(object):
   """A class to represent a sequence-to-sequence model for text summarization. Supports both baseline mode, pointer-generator mode, and coverage"""
 
-  def __init__(self, hps, vocab, device=None):
+  def __init__(self, hps, vocab, device=None, scorer=None):
     self.device = device
     self._hps = hps
     self._vocab = vocab
+    self._scorer = scorer
 
   def reward_function(self, reference, summary, measure='rouge_l/f_score'):
     """Calculate the reward between the reference and summary.
@@ -216,7 +217,8 @@ class SummarizationModel(object):
                              abstracts=self._abstracts,
                              art_oovs=self._art_oovs,
                              enc_batch=self._enc_batch,
-                             vocab=self._vocab)
+                             vocab=self._vocab,
+                             scorer=self._scorer)
 
   def _add_emb_vis(self, embedding_var):
     """Do setup so that we can view word embedding visualization in Tensorboard, as described here:

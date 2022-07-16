@@ -28,6 +28,8 @@ import util as util
 import numpy as np
 from glob import glob
 from tensorflow.python import debug as tf_debug
+
+from modeling.score import FactCC
 from replay_buffer import ReplayBuffer
 from dqn import DQN
 from threading import Thread
@@ -36,8 +38,27 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops.distributions import bernoulli
+from pathlib import Path
 
 FLAGS = tf.app.flags.FLAGS
+
+# FactCC settings
+base = Path(__file__).parent.parent.parent.resolve()
+evaluation = os.path.join(base, "factCC/evaluation", "1000_sample")
+checkpoint = os.path.join(base, "factCC/checkpoint/factcc-checkpoint")
+data = os.path.join(base, "data/cnndm/")
+articles = os.path.join(base, "data/test_output/articles")
+pointer_gen_cov = os.path.join(base, "data/test_output/pointer-gen-cov")
+
+tf.app.flags.DEFINE_boolean('factcc_gpu', False, "Use GPU (true) or not (false)?")
+tf.app.flags.DEFINE_boolean('factcc_paragraph', False, "Evaluate on entire story as a single paragraph or max of all sentences individually.")
+tf.app.flags.DEFINE_boolean('factcc_coref', False, "Coreference resolve or not?")
+tf.app.flags.DEFINE_string('factcc_cnndm', data, 'Path to cnn/dm dataset.')
+tf.app.flags.DEFINE_string('factcc_summaries', pointer_gen_cov, 'Path to decoded summaries.')
+tf.app.flags.DEFINE_string('factcc_evaluation', evaluation, 'Path to evaluation directory.')
+tf.app.flags.DEFINE_string('factcc_checkpoint', checkpoint, 'Path to factcc checkpoint directory.')
+tf.app.flags.DEFINE_integer('factcc_samples', None, 'Number of stories to preprocess.')
+tf.app.flags.DEFINE_string('factcc_mode', "evaluate", 'Evaluate or preprocess.')
 
 # Where to find data
 tf.app.flags.DEFINE_string('data_path', '', 'Path expression to tf.Example datafiles. Can include wildcards to access multiple datafiles.')
@@ -677,6 +698,16 @@ class Seq2Seq(object):
 
     self.vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size) # create a vocabulary
 
+    self.scorer = FactCC(
+      checkpoint=FLAGS.factcc_checkpoint,
+      path=FLAGS.factcc_evaluation,
+      gpu=FLAGS.factcc_gpu,
+      batch_size=FLAGS.batch_size,  # increase batch_size?
+      max_seq_length=12,  # need to understand does this matter?
+      method="sentence" if not FLAGS.factcc_paragraph else "paragraph",
+      preload=True
+    )
+
     # If in decode mode, set batch_size = beam_size
     # Reason: in decode mode, we decode one example at a time.
     # On each step, we have beam_size-many hypotheses in the beam, so we need to make a batch of these hypotheses.
@@ -736,7 +767,7 @@ class Seq2Seq(object):
 
     if self.hps.mode == 'train':
       print("creating model...")
-      self.model = SummarizationModel(self.hps, self.vocab)
+      self.model = SummarizationModel(self.hps, self.vocab, scorer=self.scorer)
       if FLAGS.ac_training:
         # current DQN with paramters \Psi
         self.dqn = DQN(self.dqn_hps,'current')
@@ -744,7 +775,7 @@ class Seq2Seq(object):
         self.dqn_target = DQN(self.dqn_hps,'target')
       self.setup_training()
     elif self.hps.mode == 'eval':
-      self.model = SummarizationModel(self.hps, self.vocab)
+      self.model = SummarizationModel(self.hps, self.vocab, scorer=self.scorer)
       if FLAGS.ac_training:
         self.dqn = DQN(self.dqn_hps,'current')
         self.dqn_target = DQN(self.dqn_hps,'target')
@@ -752,7 +783,7 @@ class Seq2Seq(object):
     elif self.hps.mode == 'decode':
       decode_model_hps = self.hps  # This will be the hyperparameters for the decoder model
       decode_model_hps = self.hps._replace(max_dec_steps=1) # The model is configured with max_dec_steps=1 because we only ever run one step of the decoder at a time (to do beam search). Note that the batcher is initialized with max_dec_steps equal to e.g. 100 because the batches need to contain the full summaries
-      model = SummarizationModel(decode_model_hps, self.vocab)
+      model = SummarizationModel(decode_model_hps, self.vocab, scorer=self.scorer)
       if FLAGS.ac_training:
         # We need our target DDQN network for collecting Q-estimation at each decoder step.
         dqn_target = DQN(self.dqn_hps,'target')

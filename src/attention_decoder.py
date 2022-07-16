@@ -101,6 +101,7 @@ def attention_decoder(_hps,
                       enc_batch = [],
                       abstracts = [],
                       vocab = None,
+                      scorer = None
                       ):
   """
   Args:
@@ -423,10 +424,10 @@ def attention_decoder(_hps,
         _greedy_rewards = []
         for _ in range(_hps.k):
           # Calculate factual correctness score based on stories
-          rl_fscore = tf.reshape(rouge_l_fscore(tf.transpose(tf.stack(samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts),
+          rl_fscore = tf.reshape(rouge_l_fscore(tf.transpose(tf.stack(samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts, scorer=scorer),
                                  [-1, 1])  # shape (batch_size, 1)
           _sampling_rewards.append(tf.reshape(rl_fscore, [-1, 1]))
-          rl_fscore = tf.reshape(rouge_l_fscore(tf.transpose(tf.stack(greedy_search_samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts),
+          rl_fscore = tf.reshape(rouge_l_fscore(tf.transpose(tf.stack(greedy_search_samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts, scorer=scorer),
                                  [-1, 1])  # shape (batch_size, 1)
           _greedy_rewards.append(tf.reshape(rl_fscore, [-1, 1]))
         sampling_rewards.append(tf.squeeze(tf.stack(_sampling_rewards, axis=1), axis = -1)) # (batch_size, k)
@@ -439,9 +440,9 @@ def attention_decoder(_hps,
       _sampling_rewards = []
       _greedy_rewards = []
       for _ in range(_hps.k):
-        rl_fscore = rouge_l_fscore(tf.transpose(tf.stack(samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts) # shape (batch_size, 1)
+        rl_fscore = rouge_l_fscore(tf.transpose(tf.stack(samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts, scorer=scorer) # shape (batch_size, 1)
         _sampling_rewards.append(tf.reshape(rl_fscore, [-1, 1]))
-        rl_fscore = rouge_l_fscore(tf.transpose(tf.stack(greedy_search_samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts)  # shape (batch_size, 1)
+        rl_fscore = rouge_l_fscore(tf.transpose(tf.stack(greedy_search_samples)[:, :, _]), target_batch, stories=stories, embedding=embedding, vocab=vocab, art_oovs=art_oovs, enc_batch=enc_batch, abstracts=abstracts, scorer=scorer)  # shape (batch_size, 1)
         _greedy_rewards.append(tf.reshape(rl_fscore, [-1, 1]))
       sampling_rewards = tf.squeeze(tf.stack(_sampling_rewards, axis=1), axis=-1) # (batch_size, k)
       greedy_rewards = tf.squeeze(tf.stack(_greedy_rewards, axis=1), axis=-1) # (batch_size, k)

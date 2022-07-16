@@ -107,6 +107,7 @@ def run_beam_search(sess, model, vocab, batch, dqn = None, dqn_sess = None, dqn_
   Returns:
     best_hyp: Hypothesis object; the best hypothesis found by beam search.
   """
+
   # Run the encoder to get the encoder hidden states and decoder initial state
   enc_states, dec_in_state = model.run_encoder(sess, batch)
   # dec_in_state is a LSTMStateTuple
@@ -117,10 +118,10 @@ def run_beam_search(sess, model, vocab, batch, dqn = None, dqn_sess = None, dqn_
                      log_probs=[0.0],
                      state=dec_in_state,
                      decoder_output = [np.zeros([FLAGS.dec_hidden_dim])],
-                     encoder_mask = [np.zeros([batch.stories.shape[1]])],
+                     encoder_mask = [np.zeros([batch.enc_batch.shape[1]])],
                      attn_dists=[],
                      p_gens=[],
-                     coverage=np.zeros([batch.stories.shape[1]])  # zero vector of length attention_length
+                     coverage=np.zeros([batch.enc_batch.shape[1]])  # zero vector of length attention_length
                      ) for _ in range(FLAGS.beam_size)]
   results = [] # this will contain finished hypotheses (those that have emitted the [STOP] token)
 

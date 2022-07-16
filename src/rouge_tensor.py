@@ -30,6 +30,8 @@ import numpy as np
 import data
 import tensorflow as tf
 
+from modeling.score import FactCC
+
 
 def _len_lcs(x, y):
   """Returns the length of the Longest Common Subsequence between two seqs.
@@ -98,7 +100,7 @@ def _f_lcs(llcs, m, n):
   return f_lcs
 
 
-def rouge_l_sentence_level(vocab):
+def rouge_l_sentence_level(vocab, scorer: FactCC):
   """Computes ROUGE-L (sentence level) of two collections of sentences.
 
   Source: https://www.microsoft.com/en-us/research/publication/
@@ -173,21 +175,28 @@ def rouge_l_sentence_level(vocab):
     # # tf.logging.info(abstracts)
 
     # Fix unk, fix -lrb-, -rrb-
-    # unk needs to be removed from end of references, check if it ever appears not at thend?
-    sents = []
+    story_sents = []
     for inx, sent in enumerate(stories):
       sent = sent.decode("utf-8")
-      sents.append(sent)
-    tf.logging.info('story: ' + str(nltk.sent_tokenize(sents[0])))
+      story_sents.append(sent)
+    # tf.logging.info('story: ' + str(story_sents[0]))
 
-    sents = []
+    eval_sents = []
     for inx, sent in enumerate(eval_sentences):
       sent = data.outputids2words([int(word) for word in sent], vocab, art_oovs[inx].decode('utf-8').split(" "))
       sent = " ".join(sent)
-      sents.append(untokenize(sent))
-    tf.logging.info('eval_sentences: ' + str(nltk.sent_tokenize(sents[0])))
+      eval_sents.append(untokenize(sent))
+    # tf.logging.info('eval_sentences: ' + str(eval_sents[0]))
 
-    raise Exception
+    ref_sents = []
+    for inx, sent in enumerate(ref_sentences):
+      sent = data.outputids2words([int(word) for word in sent], vocab, art_oovs[inx].decode('utf-8').split(" "))
+      sent = " ".join(sent)
+      ref_sents.append(untokenize(sent))
+    # tf.logging.info('ref_sentences: ' + str(ref_sents[0]))
+
+    factcc_scores = scorer.score([nltk.sent_tokenize(s) for s in story_sents], [nltk.sent_tokenize(s) for s in eval_sents])
+    # factcc_scores_ref = scorer.score([nltk.sent_tokenize(s) for s in story_sents], [nltk.sent_tokenize(s) for s in ref_sents])
 
     f1_scores = []
     for eval_sentence, ref_sentence in zip(eval_sentences, ref_sentences):
@@ -195,7 +204,17 @@ def rouge_l_sentence_level(vocab):
       n = len(eval_sentence)
       lcs = _len_lcs(eval_sentence, ref_sentence)
       f1_scores.append(_f_lcs(lcs, m, n))
-    return np.array(f1_scores).astype(np.float32)
+
+    # print(f1_scores)
+    # print(list(
+    #   (factcc_scores.to_numpy() * 0.3) + (np.array(f1_scores).astype(np.float32) * 0.7)
+    # ))
+    # print(list(factcc_scores.to_numpy()))
+    # print(list(factcc_scores_ref.to_numpy()))
+    # print(list(factcc_scores.to_numpy() * 0.3))
+
+    # raise Exception
+    return (factcc_scores.to_numpy() * 0.1) + (np.array(f1_scores).astype(np.float32) * 0.9)
 
   return func
 
@@ -213,7 +232,7 @@ def rouge_l_fscore(hypothesis, references, **unused_kwargs):
   Returns:
     rouge_l_fscore: approx rouge-l f1 score.
   """
-  rouge_l_f_score = tf.py_func(rouge_l_sentence_level(unused_kwargs['vocab']), (hypothesis, references, unused_kwargs['enc_batch'], unused_kwargs['stories'], unused_kwargs['abstracts'], unused_kwargs['art_oovs']), [tf.float32])
+  rouge_l_f_score = tf.py_func(rouge_l_sentence_level(unused_kwargs['vocab'], unused_kwargs["scorer"]), (hypothesis, references, unused_kwargs['enc_batch'], unused_kwargs['stories'], unused_kwargs['abstracts'], unused_kwargs['art_oovs']), [tf.float32])
 
   return rouge_l_f_score
 
