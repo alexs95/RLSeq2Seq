@@ -179,14 +179,14 @@ def rouge_l_sentence_level(vocab, scorer: FactCC):
     for inx, sent in enumerate(stories):
       sent = sent.decode("utf-8")
       story_sents.append(sent)
-    # tf.logging.info('story: ' + str(story_sents[0]))
+    tf.logging.info('story: ' + str(story_sents[0]))
 
     eval_sents = []
     for inx, sent in enumerate(eval_sentences):
       sent = data.outputids2words([int(word) for word in sent], vocab, art_oovs[inx].decode('utf-8').split(" "))
       sent = " ".join(sent)
       eval_sents.append(untokenize(sent))
-    # tf.logging.info('eval_sentences: ' + str(eval_sents[0]))
+    tf.logging.info('eval_sentences: ' + str(eval_sents[0]))
 
     ref_sents = []
     for inx, sent in enumerate(ref_sentences):
@@ -205,15 +205,14 @@ def rouge_l_sentence_level(vocab, scorer: FactCC):
       lcs = _len_lcs(eval_sentence, ref_sentence)
       f1_scores.append(_f_lcs(lcs, m, n))
 
-    # print(f1_scores)
-    # print(list(
-    #   (factcc_scores.to_numpy() * 0.3) + (np.array(f1_scores).astype(np.float32) * 0.7)
-    # ))
-    # print(list(factcc_scores.to_numpy()))
-    # print(list(factcc_scores_ref.to_numpy()))
-    # print(list(factcc_scores.to_numpy() * 0.3))
+    print(f1_scores)
+    print(list(
+      (factcc_scores.to_numpy() * 0.3) + (np.array(f1_scores).astype(np.float32) * 0.7)
+    ))
+    print(list(factcc_scores.to_numpy()))
+    print(list(factcc_scores.to_numpy() * 0.3))
 
-    # raise Exception
+    raise Exception
     return (factcc_scores.to_numpy() * 0.1) + (np.array(f1_scores).astype(np.float32) * 0.9)
 
   return func

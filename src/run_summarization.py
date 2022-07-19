@@ -50,7 +50,7 @@ data = os.path.join(base, "data/cnndm/")
 articles = os.path.join(base, "data/test_output/articles")
 pointer_gen_cov = os.path.join(base, "data/test_output/pointer-gen-cov")
 
-tf.app.flags.DEFINE_boolean('factcc_gpu', False, "Use GPU (true) or not (false)?")
+tf.app.flags.DEFINE_boolean('factcc_gpu_num', False, "Use GPU (true) or not (false)?")
 tf.app.flags.DEFINE_boolean('factcc_paragraph', False, "Evaluate on entire story as a single paragraph or max of all sentences individually.")
 tf.app.flags.DEFINE_boolean('factcc_coref', False, "Coreference resolve or not?")
 tf.app.flags.DEFINE_string('factcc_cnndm', data, 'Path to cnn/dm dataset.')
@@ -701,7 +701,7 @@ class Seq2Seq(object):
     self.scorer = FactCC(
       checkpoint=FLAGS.factcc_checkpoint,
       path=FLAGS.factcc_evaluation,
-      gpu=FLAGS.factcc_gpu,
+      gpu_num=FLAGS.factcc_gpu_num,
       batch_size=FLAGS.batch_size,  # increase batch_size?
       max_seq_length=12,  # need to understand does this matter?
       method="sentence" if not FLAGS.factcc_paragraph else "paragraph",
@@ -711,11 +711,11 @@ class Seq2Seq(object):
     # If in decode mode, set batch_size = beam_size
     # Reason: in decode mode, we decode one example at a time.
     # On each step, we have beam_size-many hypotheses in the beam, so we need to make a batch of these hypotheses.
-    if FLAGS.mode == 'decode':
+    if FLAGS.mode in ['decode', 'rouge']:
       FLAGS.batch_size = FLAGS.beam_size
 
     # If single_pass=True, check we're in decode mode
-    if FLAGS.single_pass and FLAGS.mode!='decode':
+    if FLAGS.single_pass and FLAGS.mode not in ['decode', 'rouge']:
       raise Exception("The single_pass flag should only be True in decode mode")
 
     # Make a namedtuple hps, containing the values of the hyperparameters that the model needs
@@ -791,6 +791,17 @@ class Seq2Seq(object):
         dqn_target = None
       decoder = BeamSearchDecoder(model, self.batcher, self.vocab, dqn = dqn_target)
       decoder.decode() # decode indefinitely (unless single_pass=True, in which case deocde the dataset exactly once)
+    elif self.hps.mode == 'rouge':
+      decode_model_hps = self.hps._replace(
+        max_dec_steps=1)  # The model is configured with max_dec_steps=1 because we only ever run one step of the decoder at a time (to do beam search). Note that the batcher is initialized with max_dec_steps equal to e.g. 100 because the batches need to contain the full summaries
+      model = SummarizationModel(decode_model_hps, self.vocab, scorer=self.scorer)
+      if FLAGS.ac_training:
+        # We need our target DDQN network for collecting Q-estimation at each decoder step.
+        dqn_target = DQN(self.dqn_hps, 'target')
+      else:
+        dqn_target = None
+      decoder = BeamSearchDecoder(model, self.batcher, self.vocab, dqn=dqn_target)
+      decoder.rouge()  # decode indefinitely (unless single_pass=True, in which case deocde the dataset exactly once)
     else:
       raise ValueError("The 'mode' flag must be one of train/eval/decode")
 

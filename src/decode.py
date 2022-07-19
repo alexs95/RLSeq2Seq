@@ -75,10 +75,16 @@ class BeamSearchDecoder(object):
 
     if FLAGS.single_pass:
       # Make the dirs to contain output written in the correct format for pyrouge
-      self._rouge_ref_dir = os.path.join(self._decode_dir, "reference")
+      self._rouge_ref_dir = os.path.join(os.path.dirname(self._decode_dir), "rouge_" + os.path.basename(self._decode_dir), "reference")
       if not os.path.exists(self._rouge_ref_dir): os.mkdir(self._rouge_ref_dir)
-      self._rouge_dec_dir = os.path.join(self._decode_dir, "decoded")
+      self._rouge_dec_dir = os.path.join(os.path.dirname(self._decode_dir), "rouge_" + os.path.basename(self._decode_dir), "decoded")
       if not os.path.exists(self._rouge_dec_dir): os.mkdir(self._rouge_dec_dir)
+
+  def rouge(self):
+    print(self._rouge_ref_dir)
+    print(self._rouge_dec_dir)
+    results_dict = rouge_eval(self._rouge_ref_dir, self._rouge_dec_dir)
+    rouge_log(results_dict, self._decode_dir)
 
   def decode(self):
     """Decode examples until data is exhausted (if FLAGS.single_pass) and return, or decode indefinitely, loading latest checkpoint at regular intervals"""
