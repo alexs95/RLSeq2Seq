@@ -75,9 +75,13 @@ class BeamSearchDecoder(object):
 
     if FLAGS.single_pass:
       # Make the dirs to contain output written in the correct format for pyrouge
-      self._rouge_ref_dir = os.path.join(os.path.dirname(self._decode_dir), "rouge_" + os.path.basename(self._decode_dir), "reference")
+      if FLAGS.mode == 'rouge':
+        self._rouge_ref_dir = os.path.join(os.path.dirname(self._decode_dir), "rouge_" + os.path.basename(self._decode_dir), "reference")
+        self._rouge_dec_dir = os.path.join(os.path.dirname(self._decode_dir), "rouge_" + os.path.basename(self._decode_dir), "decoded")
+      else:
+        self._rouge_ref_dir = os.path.join(self._decode_dir, "reference")
+        self._rouge_dec_dir = os.path.join(self._decode_dir, "decoded")
       if not os.path.exists(self._rouge_ref_dir): os.mkdir(self._rouge_ref_dir)
-      self._rouge_dec_dir = os.path.join(os.path.dirname(self._decode_dir), "rouge_" + os.path.basename(self._decode_dir), "decoded")
       if not os.path.exists(self._rouge_dec_dir): os.mkdir(self._rouge_dec_dir)
 
   def rouge(self):
