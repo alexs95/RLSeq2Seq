@@ -698,16 +698,6 @@ class Seq2Seq(object):
 
     self.vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size) # create a vocabulary
 
-    self.scorer = FactCC(
-      checkpoint=FLAGS.factcc_checkpoint,
-      path=FLAGS.factcc_evaluation,
-      gpu_num=FLAGS.factcc_gpu_num,
-      batch_size=FLAGS.batch_size,  # increase batch_size?
-      max_seq_length=12,  # need to understand does this matter?
-      method="sentence" if not FLAGS.factcc_paragraph else "paragraph",
-      preload=True
-    )
-
     # If in decode mode, set batch_size = beam_size
     # Reason: in decode mode, we decode one example at a time.
     # On each step, we have beam_size-many hypotheses in the beam, so we need to make a batch of these hypotheses.
@@ -765,6 +755,18 @@ class Seq2Seq(object):
 
     tf.set_random_seed(111) # a seed value for randomness
 
+    if FLAGS.rl_training:
+      self.scorer = FactCC(
+        checkpoint=FLAGS.factcc_checkpoint,
+        path=FLAGS.factcc_evaluation,
+        gpu_num=FLAGS.factcc_gpu_num,
+        batch_size=FLAGS.batch_size,  # increase batch_size?
+        max_seq_length=12,  # need to understand does this matter?
+        method="sentence" if not FLAGS.factcc_paragraph else "paragraph",
+        preload=True
+      )
+    else:
+      self.scorer = None
     if self.hps.mode == 'train':
       print("creating model...")
       self.model = SummarizationModel(self.hps, self.vocab, scorer=self.scorer)
