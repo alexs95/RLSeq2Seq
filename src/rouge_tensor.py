@@ -212,7 +212,7 @@ def rouge_l_sentence_level(vocab, scorer: FactCC):
     # print(list(factcc_scores.to_numpy()))
     # print(list(factcc_scores.to_numpy() * 0.3))
 
-    return (factcc_scores.to_numpy() * 0.1) + (np.array(f1_scores).astype(np.float32) * 0.9)
+    return (factcc_scores.to_numpy() * 0.05) + (np.array(f1_scores).astype(np.float32) * 0.95)
 
   return func
 
